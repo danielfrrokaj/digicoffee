@@ -1,0 +1,96 @@
+Context:
+Restaurants often struggle with slow order-taking, human errors, and limited staff availability. Modern diners expect a fast, seamless experience—especially in busy environments.
+
+Description:
+This software is a QR-based restaurant ordering system. Customers scan a QR code at their table, view the digital menu, and place orders directly from their phones—no app download or waiter needed. Orders are sent instantly to the kitchen or bar. Staff can manage orders in real time via an admin dashboard. The system supports role-based access, guest sessions, and live updates using React Native and Supabase.
+
+
+QR-Based Ordering App: Architecture Rules
+Supabase Schema Design
+Define clear relational tables in supabase/schema.sql. Create one table per entity: e.g. venues, tables, products, orders, order_items, sessions, and users or profiles. Use UUID primary keys and venue_id foreign keys to scope data to each venue. For example, tables should reference venues(id), and order_items should link orders(id) to products(id). Keep tables narrow (normalized) so each holds one concept (Row Level Security | Supabase Docs). Maintain referential integrity with foreign key constraints and indexes (e.g. index orders(venue_id, created_at) for faster queries).
+
+
+Include user and session tables. Use a profiles (or users) table keyed by Auth user IDs, storing roles and venue affiliation. For guest sessions, define a sessions table with columns like (id UUID PK, table_id, user_id, expires_at timestamp, status). Linking orders.session_id to sessions(id) ensures each order is tied to a specific guest session or user. Use expires_at to record a 3-minute timeout (Supabase Auth now supports Anonymous Sign-ins).
+
+
+Supabase Auth & RLS Policies
+Enable Auth and Anonymous Sign-In. Use Supabase Auth for staff accounts and anonymous sign-in for guests. Anonymous sign-ins create temporary “authenticated” users with an is_anonymous flag in the JWT (Supabase Auth now supports Anonymous Sign-ins). This lets guests place orders without manual signup, while RLS can still identify them via auth.jwt()->'is_anonymous'. Store staff roles (admin/manager/staff) in user metadata or a profiles.role column. Ensure the Supabase client is initialized with anon/public keys for front-end use.
+
+
+Enable RLS on all public tables. For every table in public, execute ALTER TABLE ... ENABLE ROW LEVEL SECURITY and create policies. RLS policies act like implicit WHERE clauses (Row Level Security | Supabase Docs). Define policies per role: e.g., allow admins to perform any operation; allow managers read/write within their venue; allow staff to read/write current orders but not alter menus; allow guests to only create/update their own session and orders. For instance, on the orders table create a policy using (orders.venue_id = auth.role_or_claim_venue_id()) or check auth.uid() matches the session’s user_id (Row Level Security | Supabase Docs). Use Supabase JWT claims (including aud, sub, custom claims) or helper functions to check roles and venue membership. Remember: once RLS is on, no access is granted until matching policies exist (Row Level Security | Supabase Docs) (Row Level Security | Supabase Docs).
+
+
+Supabase Real-Time Orders
+Use Supabase Realtime for live updates. To notify kitchen and staff of new orders, subscribe to the orders table via Supabase Realtime (e.g. supabase.from('orders').on('INSERT', payload => { … })). Prefer Broadcast channels with Postgres triggers for scalability (Subscribing to Database Changes | Supabase Docs). For example, create a trigger with realtime.broadcast_changes() on orders so inserts/updates push to clients. In React, encapsulate this in a custom hook (src/hooks/useRealtimeOrders.ts) that filters by venue_id. Always unsubscribe on component unmount to avoid leaks. For performance, consider listening only to relevant events (INSERT/UPDATE) and use JSON payloads to update local state or invalidate cache.
+
+
+Sample subscription pattern: In a hook, call const subscription = supabase.channel('orders').on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: \venue_id=eq.${currentVenueId}` }, handleOrderChange).subscribe()`. Reactively update or invalidate data on each message. See Supabase Realtime docs for guidance.
+
+
+React Folder Structure & Components
+Organize by feature and role. In src/, create folders like api/, components/, hooks/, pages/ (or views), and subfolders for admin vs customer features. For example:
+
+
+src/pages/Customer/ for mobile ordering screens, and src/pages/Admin/ for dashboard/kitchen.
+
+
+src/components/OrderList.tsx, src/components/MenuItem.tsx, src/components/Layout/AdminLayout.tsx, etc.
+
+
+src/hooks/useRealtimeOrders.ts, src/hooks/useSupabaseAuth.ts for shared logic.
+ This modular layout ensures each file has one component or hook (React Folder Structure in 5 Steps [2025]) (React Folder Structure in 5 Steps [2025]). Keep naming consistent (PascalCase for components, camelCase for hooks).
+
+
+Use example filenames: Put global config (Supabase client) in src/lib/supabaseClient.ts. Put data-fetching hooks in src/hooks/ (e.g. useProducts.ts, useCreateOrder.ts). Put pages or route components in src/pages/ (e.g. CustomerMenuPage.tsx, AdminDashboard.tsx). This separation makes components reusable and maintainable.
+
+
+QR Code & Guest Session Handling
+Generate session QR codes. Each restaurant table should have a unique QR code linking to a session creation endpoint (e.g. https://app.example.com/session/{table_id}). You can generate these codes using a library like qrcode.react or a backend service. Embed the session token or table identifier in the QR URL. When scanned, the app should either create or join a session. In React, route something like /session/:sessionId where a component calls Supabase to insert or select a sessions row.
+
+
+Session creation flow: On the front end, when a customer scans the QR, use supabase.auth.signInAnonymously() to create a guest user (Supabase Auth now supports Anonymous Sign-ins) (if not already signed in). Then INSERT a new row in sessions with { table_id, user_id, expires_at }. Use an RPC or REST insert via Supabase client. Store the new session_id (UUID) in app state or local storage. The QR code can encode either an existing session ID (if you pre-create sessions) or the table ID so the app creates the session. Always include venue_id from the context to link resources.
+
+
+Session access and security: Apply RLS so guests can only read/write their own sessions record (e.g. policy like using (sessions.user_id = auth.uid())). Only authenticated (even anonymous) users can participate. For example, policy: CREATE POLICY "Guests can use own session" ON sessions FOR ALL TO authenticated USING (user_id = auth.uid()); (Row Level Security | Supabase Docs).
+
+
+State Management & Supabase Integration
+Use React Query with Supabase. Wrap your app in <QueryClientProvider> and create a single Supabase client (e.g. in src/lib/supabaseClient.ts) imported where needed. Use React Query (@tanstack/react-query) for all data fetching/mutations. For example, useQuery(['products', venueId], () => supabase.from('products').select(...) ) and useMutation(() => supabase.from('orders').insert(...)). React Query handles caching and background updates automatically (Using React Query with Next.js App Router and Supabase Cache Helpers) (The magic of react-query and supabase - DEV Community). On mutation success (e.g. new order), invalidate or refetch relevant queries. Query keys should be scoped by parameters (venue, session, etc.) for cache correctness.
+
+
+Single source of truth for data: Avoid manual useState for fetched data – rely on React Query caches. Use supabase-cache-helpers or similar to simplify common patterns. React Query also offers devtools to inspect cache states. This setup ensures consistency and reduces boilerplate. Remember to handle loading and error states from queries for a robust UI.
+
+
+Authentication state: Use Supabase’s auth state listener (supabase.auth.onAuthStateChange) to track login/logout in React. Store user info (including role claims) in context or use useQuery(['profile'], ...) to fetch the profiles row. Use role info in components (e.g. show admin menu only if role==='admin').
+
+
+Guest Session Timer (3-Minute Expiry)
+Implement a countdown in React. When a guest session starts, start a 3-minute timer (e.g. setTimeout) in the session page component or a custom hook (useTimeout). Show a countdown UI and a warning near expiry. Upon timeout, automatically DELETE or mark the sessions row as expired. Use supabase.from('sessions').delete().eq('id', sessionId) or an RPC. Also navigate the UI back to home or disable ordering when expired.
+
+
+Enforce expiry server-side (optional). As a backup, you can enforce expiry in the DB: add a expires_at TIMESTAMP column (set to now()+3min) and a check constraint or background job to purge expired sessions. Use RLS to deny queries to expired sessions, e.g. policy using (expires_at > now() AND user_id = auth.uid()). This double-checks that even if the client fails, the server won’t allow operations on expired sessions.
+
+
+Real-time expiration (optional): Alternatively, listen for session timeout via Supabase Realtime. Have a trigger to update a status field or broadcast, so client UIs can react immediately when a session expires (e.g. disable order buttons).
+
+
+Styling with Tailwind CSS and shadcn/ui
+Use utility-first styling. Rely on Tailwind CSS classes in className rather than custom CSS. Keep style rules co-located in components for clarity. In tailwind.config.js, define any custom colors or spacing to match the brand. Follow Tailwind conventions (e.g. text-sm, bg-primary, flex, grid, etc.) and group classes logically. Avoid deep nesting – Tailwind’s utilities keep styles flat.
+
+
+Integrate shadcn/ui components. Use the pre-built shadcn/ui primitives for common UI (buttons, inputs, dialogs). Do not modify the library’s source; instead, wrap or extend components via props and custom classNames. For example, use <Button variant="primary" /> from shadcn and add className="w-full" if needed. Override themes by configuring CSS variables or Tailwind theme colors in src/styles/theme.css or tailwind.config.js. This ensures updates from the library won’t overwrite your custom styles.
+
+
+Consistent naming and theming. Follow a predictable naming scheme (e.g. utility classes first, then custom classes). Group similar components (e.g. all form elements) under src/components/ui/. Keep styling tokens (colors, font sizes) in the Tailwind config or a shared theme file, so changes propagate. This leads to a cohesive design system across customer and admin interfaces.
+
+
+UI Layout & Page Division
+Separate customer (mobile) vs admin/kitchen (desktop) UIs. Structure routes/pages accordingly. For instance, customer-facing screens (menu, cart) live under /customer routes or a Customer component tree, while staff views (order management, menu editor) go under /admin or Kitchen. Use responsive design: customer pages should be mobile-first (e.g. using sm:, md: Tailwind prefixes), whereas admin views can assume larger screens (sidebars, tables).
+
+
+Use distinct layouts. Create separate layout components, e.g. CustomerLayout.tsx (simplified navbar/back button) vs AdminLayout.tsx (side navigation, dashboard). In React Router or your framework, wrap respective route groups with the appropriate layout. This encapsulates differences: e.g. the customer app is a progressive web app styled for phones, while the admin app uses desktop navigation and bulk data tables. By dividing at the route level, code is cleaner and each part can scale independently.
+
+
+Sources: Supabase documentation and best practices (Row Level Security | Supabase Docs) (Subscribing to Database Changes | Supabase Docs) (Supabase Auth now supports Anonymous Sign-ins); React Query guidance (Using React Query with Next.js App Router and Supabase Cache Helpers) (The magic of react-query and supabase - DEV Community); general React and Tailwind conventions.
+
+
