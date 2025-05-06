@@ -1,12 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Ideally, these should be environment variables
-const supabaseUrl = 'https://hyoqemqzauvoxtcnthqb.supabase.co'
-// Use the actual anon key retrieved
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5b3FlbXF6YXV2b3h0Y250aHFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYzNjAzNzcsImV4cCI6MjA2MTkzNjM3N30.UtZfjTQEoQBhAzbvSnNqtUz-oOq-cRppmjqyYuy84vM'
+// Read variables from import.meta.env (Vite specific)
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Supabase URL and Anon Key must be provided.')
+  console.error('Supabase URL or Anon Key is missing. Make sure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your .env file.');
+  throw new Error('Supabase environment variables are not set.')
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey) 

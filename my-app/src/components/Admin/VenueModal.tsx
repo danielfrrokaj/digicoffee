@@ -119,7 +119,6 @@ const VenueModal: React.FC<VenueModalProps> = ({ isOpen, onClose, venueToEdit })
                 </Dialog.Title>
                 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* --- Form Fields (similar to previous implementation) --- */}
                   <div>
                      <label htmlFor="modalVenueName" className="block text-sm font-medium text-gray-700 mb-1">Venue Name <span className="text-red-500">*</span></label>
                      <input type="text" id="modalVenueName" value={name} onChange={(e) => setName(e.target.value)} required disabled={isLoading} className="modal-input" />
@@ -144,7 +143,6 @@ const VenueModal: React.FC<VenueModalProps> = ({ isOpen, onClose, venueToEdit })
                      <label htmlFor="modalVenueLogoUrl" className="block text-sm font-medium text-gray-700 mb-1">Logo URL</label>
                      <input type="url" id="modalVenueLogoUrl" placeholder="https://..." value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} disabled={isLoading} className="modal-input" />
                    </div>
-                  {/* --- End Form Fields --- */}
 
                   {mutationError && <p className="text-sm text-red-600">Error: {mutationError.message}</p>}
 

@@ -137,5 +137,45 @@ export const useUpdateVenue = () => {
   });
 };
 
-// --- Assign Manager (Placeholder - separate mutation) ---
-// We'll add this later, maybe in a useStaff hook 
+// --- Assign Manager via Edge Function --- 
+interface AssignManagerPayload {
+    venueId: string;
+    managerUserId: string;
+}
+
+const assignManagerViaFunction = async (payload: AssignManagerPayload): Promise<{ success: boolean; message: string }> => {
+    const { data, error } = await supabase.functions.invoke('assign-venue-manager', {
+        body: payload,
+    });
+
+    if (error) {
+        console.error('Error invoking assign-venue-manager function:', error);
+        throw new Error(error.message);
+    }
+    return data;
+};
+
+export const useAssignManager = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation<{ success: boolean; message: string }, Error, AssignManagerPayload>({
+        mutationFn: assignManagerViaFunction,
+        onSuccess: (data, variables) => {
+            if (data.success) {
+                console.log(`Manager ${variables.managerUserId} assigned to venue ${variables.venueId} successfully.`);
+                // Invalidate both venues and staff profiles as both might change
+                queryClient.invalidateQueries({ queryKey: ['venues'] });
+                queryClient.invalidateQueries({ queryKey: ['staffProfiles'] }); 
+            } else {
+                console.error('Assign manager function reported failure:', data.message);
+                throw new Error(data.message || 'Failed to assign manager via function.');
+            }
+        },
+        onError: (error) => {
+            console.error("Assign manager mutation error (hook level):", error.message);
+        }
+    });
+};
+
+// --- (Placeholder for fetching manager name based on ID) --- 
+// Could be added here or in useStaff 

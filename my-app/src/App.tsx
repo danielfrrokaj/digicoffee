@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext';
 
 // Layouts
 import AdminLayout from './components/Layout/AdminLayout';
+import ManagerLayout from './components/Layout/ManagerLayout';
 
 // Pages
 import LoginPage from './pages/LoginPage';
@@ -10,44 +11,77 @@ import AdminDashboard from './pages/Admin/AdminDashboard';
 import VenueManagement from './pages/Admin/VenueManagement';
 import UserManagement from './pages/Admin/UserManagement';
 import Analytics from './pages/Admin/Analytics';
+// Import new placeholder pages
+import UserProfilePage from './pages/Admin/UserProfilePage'; 
+import VenueProfilePage from './pages/Admin/VenueProfilePage';
 // import CustomerMenu from './pages/Customer/CustomerMenu'; // Customer page placeholder
+
+// Manager Pages
+import ManagerDashboard from './pages/Manager/ManagerDashboard';
+import CategoryMenuManagement from './pages/Manager/CategoryMenuManagement';
+import StaffManagement from './pages/Manager/StaffManagement';
+import ManagerAnalytics from './pages/Manager/ManagerAnalytics';
 
 // Protected Route Component for Admins
 const AdminProtectedRoute = () => {
   const { session, userProfile, loading } = useAuth();
 
-  if (loading) {
+  // Only show loading indicator if loading AND we don't have a session yet.
+  // This prevents flicker on window focus if already authenticated.
+  if (loading && !session) { 
     return <div className="flex justify-center items-center h-screen">Checking authentication...</div>;
   }
 
-  // Check for session AND admin role
+  // If not loading, or if loading but we already have a session,
+  // proceed to check if the session is valid and user is admin.
   if (!session || userProfile?.role !== 'admin') {
-    // Redirect them to the /login page, but save the current location they were
-    // trying to go to when they were redirected. This allows us to send them
-    // along to that page after they login, which is a nicer user experience
-    // than dropping them off on the home page.
     return <Navigate to="/login" replace />;
   }
 
-  // If logged in and is admin, render the AdminLayout which contains the Outlet for nested routes
+  // If session exists and user is admin, render the layout.
   return <AdminLayout><Outlet /></AdminLayout>; 
 };
 
-function App() {
+// Protected Route Component for Managers
+const ManagerProtectedRoute = () => {
   const { session, userProfile, loading } = useAuth();
 
-  // Show a global loading indicator while figuring out auth state
-  if (loading && !session) {
-    return <div className="flex justify-center items-center h-screen">Loading Application...</div>;
+  // Only show loading indicator if loading AND we don't have a session yet.
+  if (loading && !session) { 
+    return <div className="flex justify-center items-center h-screen">Checking authentication...</div>;
   }
+
+  // If not loading, or if loading but we already have a session,
+  // proceed to check if the session is valid and user is manager.
+  if (!session || userProfile?.role !== 'manager') {
+    return <Navigate to="/login" replace />;
+  }
+
+  // If session exists and user is manager, render the layout.
+  return <ManagerLayout><Outlet /></ManagerLayout>; 
+};
+
+function App() {
+  // Remove the loading state check here - AuthProvider handles initial load
+  const { session, userProfile } = useAuth(); 
 
   return (
     <Routes>
       {/* === PUBLIC ROUTES === */}
-      {/* Login route - redirect to admin if already logged in as admin */}
+      {/* Login route - redirect based on role */}
       <Route 
         path="/login"
-        element={!session ? <LoginPage /> : (userProfile?.role === 'admin' ? <Navigate to="/admin" replace /> : <div>Logged in but not admin?</div> /* Decide where non-admins go */)}
+        element={
+          !session ? (
+            <LoginPage />
+          ) : userProfile?.role === 'admin' ? (
+            <Navigate to="/admin" replace />
+          ) : userProfile?.role === 'manager' ? (
+            <Navigate to="/manager" replace />
+          ) : (
+            <div>Logged in but no appropriate role.</div>
+          )
+        }
       />
 
       {/* Customer Menu Route (Example - Needs Implementation) */}
@@ -60,16 +94,40 @@ function App() {
         <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} /> 
         <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="/admin/venues" element={<VenueManagement />} />
+        <Route path="/admin/venues/:venueId" element={<VenueProfilePage />} />
         <Route path="/admin/users" element={<UserManagement />} />
+        <Route path="/admin/users/:userId" element={<UserProfilePage />} />
         <Route path="/admin/analytics" element={<Analytics />} />
         {/* Add other nested admin routes here */}
       </Route>
 
+      {/* === MANAGER PROTECTED ROUTES === */}
+      <Route element={<ManagerProtectedRoute />}>
+        {/* Default manager route redirects to dashboard */}
+        <Route path="/manager" element={<Navigate to="/manager/dashboard" replace />} /> 
+        <Route path="/manager/dashboard" element={<ManagerDashboard />} />
+        <Route path="/manager/menu" element={<CategoryMenuManagement />} />
+        <Route path="/manager/staff" element={<StaffManagement />} />
+        <Route path="/manager/analytics" element={<ManagerAnalytics />} />
+      </Route>
+
       {/* === DEFAULT/FALLBACK ROUTE === */}
-      {/* Redirect root path based on auth status */}
+      {/* Redirect root path based on auth status and role */}
       <Route 
         path="/"
-        element={session ? (userProfile?.role === 'admin' ? <Navigate to="/admin" replace /> : <Navigate to="/menu-placeholder" replace /> /* Or staff dashboard */) : <Navigate to="/login" replace />}
+        element={
+          session ? (
+            userProfile?.role === 'admin' ? (
+              <Navigate to="/admin" replace />
+            ) : userProfile?.role === 'manager' ? (
+              <Navigate to="/manager" replace />
+            ) : (
+              <Navigate to="/menu-placeholder" replace />
+            )
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
       />
 
       {/* Fallback for any other unknown routes */}
